@@ -523,7 +523,7 @@ export default function Graph() {
   };
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="flex h-[calc(100vh-8rem)] flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <button
           onClick={addNode}
@@ -548,7 +548,7 @@ export default function Graph() {
           connection actions.
         </p>
       </div>
-      <div className="relative h-[600px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+      <div className="relative flex-1 min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
         <svg
           ref={svgRef}
           className="h-full w-full touch-none cursor-grab active:cursor-grabbing"
@@ -633,14 +633,12 @@ export default function Graph() {
                           selectedNodeId === node.id
                             ? "#1e3a8a"
                             : isParent
-                              ? "#7c8eb5"
+                              ? "#64748b"
                               : isChildInParent
                                 ? "#334155"
-                                : "#94a3b8"
+                                : "#64748b"
                         }
-                        strokeWidth={
-                          isParent ? 2.5 : isChildInParent ? 2.6 : 2.25
-                        }
+                        strokeWidth="2"
                         style={{ pointerEvents: "none" }}
                       />
                       {isParent && (
@@ -672,18 +670,13 @@ export default function Graph() {
                       <div
                         onPointerDown={(event) => beginNodeDrag(event, node)}
                         onClick={(event) => handleNodeClick(event, node)}
-                        className={
-                          isParent
-                            ? "relative flex h-full w-full cursor-grab flex-col justify-start rounded-xl border-2 border-slate-500 bg-white shadow-md active:cursor-grabbing"
-                            : "relative flex h-full w-full cursor-grab flex-col justify-start rounded-xl border-2 bg-white shadow-md active:cursor-grabbing"
-                        }
+                        className="relative flex h-full w-full cursor-grab flex-col justify-start active:cursor-grabbing"
                         style={{
                           pointerEvents: "auto",
-                          borderColor: isParent
-                            ? "#64748b"
-                            : isChildInParent
-                              ? "#334155"
-                              : "#64748b",
+                          backgroundColor: isParent
+                            ? "transparent"
+                            : "transparent",
+                          borderRadius: "12px",
                           boxShadow: isChildInParent
                             ? "0 8px 18px rgba(15, 23, 42, 0.12)"
                             : "0 6px 16px rgba(15, 23, 42, 0.08)",
@@ -860,23 +853,6 @@ export default function Graph() {
                   if (cleanedName) {
                     updateNode(selectedNode.id, { label: cleanedName });
                   }
-                }
-                setNodeMenuId(null);
-              }}
-              className="block w-full border-t border-slate-100 px-2 pt-2 text-left text-sm text-slate-700 hover:text-blue-600"
-            >
-              Rename node
-            </button>
-            <button
-              onClick={() => {
-                const nextName = window.prompt(
-                  "Rename node",
-                  selectedNode.label || "",
-                );
-                if (nextName !== null) {
-                  updateNode(selectedNode.id, {
-                    label: nextName.trim() || selectedNode.label,
-                  });
                 }
                 setNodeMenuId(null);
               }}
