@@ -573,13 +573,13 @@ export default function Graph() {
             </pattern>
             <marker
               id="arrow"
-              markerWidth="10"
-              markerHeight="10"
-              refX="8"
-              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              refX="6"
+              refY="3"
               orient="auto"
             >
-              <path d="M 0 0 L 8 4 L 0 8 z" fill="#3b82f6" />
+              <path d="M 0 0 L 6 3 L 0 6 z" fill="#000000" />
             </marker>
             {nodes
               .filter((node) => node.isParent)
@@ -620,7 +620,7 @@ export default function Graph() {
                 const isChildInParent = Boolean(node.parentId);
 
                 return (
-                  <React.Fragment key={node.id}>
+                  <g key={node.id} className="group">
                     <g>
                       <rect
                         x={node.x}
@@ -745,7 +745,30 @@ export default function Graph() {
                         beginNodeResize(event, node);
                       }}
                     />
-                  </React.Fragment>
+
+                    {SIDES.map((side) => {
+                      const point = handlePoint(node, side);
+                      const isHorizontal = side === "top" || side === "bottom";
+
+                      return (
+                        <ellipse
+                          key={`${node.id}-${side}`}
+                          cx={point.x}
+                          cy={point.y}
+                          rx={isHorizontal ? 10 : 6}
+                          ry={isHorizontal ? 6 : 10}
+                          fill="#000"
+                          stroke="white"
+                          strokeWidth="2"
+                          className="pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100"
+                          aria-label={`Connect ${node.label} from ${side}`}
+                          onPointerDown={(event) =>
+                            beginHandleConnection(event, node, side)
+                          }
+                        />
+                      );
+                    })}
+                  </g>
                 );
               })}
             {edges.map((edge) => {
@@ -761,7 +784,7 @@ export default function Graph() {
                   y1={start.y}
                   x2={end.x}
                   y2={end.y}
-                  stroke="#3b82f6"
+                  stroke="#000000"
                   strokeWidth="2.5"
                   markerEnd="url(#arrow)"
                 />
@@ -778,27 +801,6 @@ export default function Graph() {
                 strokeDasharray="6 5"
                 markerEnd="url(#arrow)"
               />
-            )}
-            {nodes.flatMap((node) =>
-              SIDES.map((side) => {
-                const point = handlePoint(node, side);
-                return (
-                  <circle
-                    key={`${node.id}-${side}`}
-                    cx={point.x}
-                    cy={point.y}
-                    r="7"
-                    fill="#3b82f6"
-                    stroke="white"
-                    strokeWidth="2"
-                    className="cursor-crosshair hover:fill-blue-700"
-                    aria-label={`Connect ${node.label} from ${side}`}
-                    onPointerDown={(event) =>
-                      beginHandleConnection(event, node, side)
-                    }
-                  />
-                );
-              }),
             )}
           </g>
         </svg>
