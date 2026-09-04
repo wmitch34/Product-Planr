@@ -7,8 +7,8 @@ const NODE_WIDTH = 156;
 const NODE_HEIGHT = 72;
 const SIDES = ["top", "right", "bottom", "left"];
 const initialNodes = [
-  { id: "n1", x: 96, y: 96, label: "Web app", comment: "", isParent: false },
-  { id: "n2", x: 384, y: 168, label: "Database", comment: "", isParent: false },
+  { id: "n1", x: 96, y: 96, label: "Web app", details: [], isParent: false },
+  { id: "n2", x: 384, y: 168, label: "Database", details: [], isParent: false },
 ];
 
 const snap = (value, step = GRID_SIZE) => Math.round(value / step) * step;
@@ -23,7 +23,7 @@ export default function Graph() {
   const [nodes, setNodes] = useState(initialNodes);
   const [edges, setEdges] = useState([]);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
-  const [commentNodeId, setCommentNodeId] = useState(null);
+  const [detailsNodeId, setDetailsNodeId] = useState(null);
   const [nodeMenuId, setNodeMenuId] = useState(null);
   const [handleMenu, setHandleMenu] = useState(null);
   const [connection, setConnection] = useState(null);
@@ -65,7 +65,7 @@ export default function Graph() {
       viewport,
     };
     setSelectedNodeId(null);
-    setCommentNodeId(null);
+    setDetailsNodeId(null);
     setNodeMenuId(null);
     setHandleMenu(null);
   };
@@ -147,7 +147,7 @@ export default function Graph() {
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
         label: `Service ${currentNodes.length + 1}`,
-        comment: "",
+        details: [],
         isParent: false,
         parentId: null,
       },
@@ -395,7 +395,7 @@ export default function Graph() {
     };
     connectionRef.current = nextConnection;
     setConnection(nextConnection);
-    setCommentNodeId(null);
+    setDetailsNodeId(null);
     setHandleMenu(null);
     window.addEventListener("pointermove", moveConnection);
     window.addEventListener("pointerup", finishConnection);
@@ -460,7 +460,7 @@ export default function Graph() {
     const point = handlePoint(node, side);
     setSelectedNodeId(node.id);
     setNodeMenuId(null);
-    setCommentNodeId(null);
+    setDetailsNodeId(null);
     setHandleMenu({ nodeId: node.id, side, point });
   };
 
@@ -526,27 +526,70 @@ export default function Graph() {
     <section className="flex h-[calc(100vh-8rem)] flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <button
+          type="button"
           onClick={addNode}
-          className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
+          aria-label="Add node"
+          title="Add node"
+          data-tooltip="Add node"
+          className="graph-toolbar-button rounded-lg bg-blue-600 text-white shadow-sm hover:bg-blue-700"
         >
-          Add Node
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="h-5 w-5"
+          >
+            <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+          </svg>
         </button>
         <button
+          type="button"
           onClick={() => focusNode(-1)}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          aria-label="Focus previous node"
+          title="Previous node"
+          data-tooltip="Previous node"
+          className="graph-toolbar-button rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
         >
-          Prev Node
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="h-5 w-5"
+          >
+            <path
+              d="m15 18-6-6 6-6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </button>
         <button
+          type="button"
           onClick={() => focusNode(1)}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          aria-label="Focus next node"
+          title="Next node"
+          data-tooltip="Next node"
+          className="graph-toolbar-button rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
         >
-          Next Node
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="h-5 w-5"
+          >
+            <path
+              d="m9 18 6-6-6-6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </button>
-        <p className="text-sm text-slate-500">
-          Use the three dots for details and comments. Click a cardinal dot for
-          connection actions.
-        </p>
       </div>
       <div className="relative flex-1 min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
         <svg
@@ -711,7 +754,7 @@ export default function Graph() {
                               event.stopPropagation();
                               setSelectedNodeId(node.id);
                               setNodeMenuId(node.id);
-                              setCommentNodeId(null);
+                              setDetailsNodeId(null);
                               setHandleMenu(null);
                             }}
                             className="flex h-6 w-6 items-center justify-center rounded text-lg leading-none text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
@@ -812,7 +855,7 @@ export default function Graph() {
             onPointerDown={(event) => event.stopPropagation()}
           >
             <div className="border-b border-slate-100 px-2 pb-2 text-sm font-semibold text-slate-800">
-              Details
+              Node actions
             </div>
             {selectedNode.parentId && (
               <button
@@ -837,12 +880,12 @@ export default function Graph() {
             </button>
             <button
               onClick={() => {
-                setCommentNodeId(selectedNode.id);
+                setDetailsNodeId(selectedNode.id);
                 setNodeMenuId(null);
               }}
               className="block w-full border-t border-slate-100 px-2 pt-2 text-left text-sm text-slate-700 hover:text-blue-600"
             >
-              {selectedNode.comment ? "Edit comment" : "Add comment"}
+              Details
             </button>
             <button
               onClick={() => {
@@ -910,38 +953,95 @@ export default function Graph() {
           </div>
         )}
 
-        {commentNodeId && (
+        {detailsNodeId && (
           <div
-            className="fixed z-[1001] w-64 rounded-lg border border-slate-300 bg-white p-3 opacity-100 shadow-xl"
-            style={{
-              left: selectedNode
-                ? selectedNode.x + (selectedNode.width ?? NODE_WIDTH) + 12
-                : 12,
-              top: selectedNode ? selectedNode.y + 8 : 12,
-            }}
+            className="fixed z-[1001] max-h-[min(70vh,40rem)] w-[min(42rem,calc(100vw-2rem))] rounded-lg border border-slate-300 bg-white p-5 opacity-100 shadow-xl"
+            style={selectedNode ? nodeMenuPosition(selectedNode) : undefined}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            <div className="mb-2 text-sm font-semibold text-slate-800">
-              Comment on {selectedNode?.label}
+            <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2">
+              <div className="text-sm font-semibold text-slate-800">
+                Details for {selectedNode?.label}
+              </div>
+              <button
+                type="button"
+                aria-label="Add detail"
+                title="Add detail"
+                onClick={() =>
+                  updateNode(detailsNodeId, {
+                    details: [
+                      ...(nodes.find((node) => node.id === detailsNodeId)
+                        ?.details || []),
+                      { key: "", value: "" },
+                    ],
+                  })
+                }
+                className="flex h-7 w-7 items-center justify-center rounded text-lg leading-none text-slate-500 hover:bg-slate-100 hover:text-blue-600"
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className="h-4 w-4"
+                >
+                  <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                </svg>
+              </button>
             </div>
-            <textarea
-              value={
-                nodes.find((node) => node.id === commentNodeId)?.comment || ""
-              }
-              onChange={(event) =>
-                updateNode(commentNodeId, { comment: event.target.value })
-              }
-              autoFocus
-              rows="4"
-              placeholder="Add a note about this node..."
-              className="w-full resize-none rounded border border-slate-200 p-2 text-sm outline-none focus:border-blue-500"
-            />
-            <button
-              onClick={() => setCommentNodeId(null)}
-              className="mt-2 rounded bg-slate-800 px-3 py-1.5 text-xs font-medium text-white"
-            >
-              Done
-            </button>
+            <div className="max-h-[calc(70vh-6rem)] space-y-2 overflow-y-auto">
+              {(nodes.find((node) => node.id === detailsNodeId)?.details || [])
+                .length === 0 ? (
+                <p className="py-3 text-center text-xs text-slate-500">
+                  No details yet. Add a key/value pair.
+                </p>
+              ) : (
+                (
+                  nodes.find((node) => node.id === detailsNodeId)?.details || []
+                ).map((detail, index) => (
+                  <div
+                    key={`${detailsNodeId}-detail-${index}`}
+                    className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-2"
+                  >
+                    <input
+                      value={detail.key}
+                      onChange={(event) => {
+                        const currentDetails =
+                          nodes.find((node) => node.id === detailsNodeId)
+                            ?.details || [];
+                        updateNode(detailsNodeId, {
+                          details: currentDetails.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? { ...item, key: event.target.value }
+                              : item,
+                          ),
+                        });
+                      }}
+                      placeholder="Key"
+                      className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-blue-500"
+                    />
+                    <input
+                      value={detail.value}
+                      onChange={(event) => {
+                        const currentDetails =
+                          nodes.find((node) => node.id === detailsNodeId)
+                            ?.details || [];
+                        updateNode(detailsNodeId, {
+                          details: currentDetails.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? { ...item, value: event.target.value }
+                              : item,
+                          ),
+                        });
+                      }}
+                      placeholder="Value"
+                      className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-blue-500"
+                    />
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
       </div>
