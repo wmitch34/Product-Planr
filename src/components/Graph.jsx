@@ -1,15 +1,33 @@
 import React, { useEffect, useRef, useState } from "react";
+import {
+  createGraphDocument,
+  createId,
+  normalizeGraphDocument,
+} from "../lib/graphDocument";
 
 const GRID_SIZE = 24;
 const PARENT_GRID_SIZE = 12;
 const GRID_EXTENT = 20000;
 const NODE_WIDTH = 156;
 const NODE_HEIGHT = 72;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2;
+const ZOOM_STEP = 0.25;
 const SIDES = ["top", "right", "bottom", "left"];
-const initialNodes = [
-  { id: "n1", x: 96, y: 96, label: "Web app", details: [], isParent: false },
-  { id: "n2", x: 384, y: 168, label: "Database", details: [], isParent: false },
-];
+const defaultDocument = createGraphDocument({
+  name: "Product architecture",
+  nodes: [
+    { id: "n1", x: 96, y: 96, label: "Web app", details: [], isParent: false },
+    {
+      id: "n2",
+      x: 384,
+      y: 168,
+      label: "Database",
+      details: [],
+      isParent: false,
+    },
+  ],
+});
 
 const snap = (value, step = GRID_SIZE) => Math.round(value / step) * step;
 
@@ -19,22 +37,41 @@ const rectsOverlap = (first, second) =>
   first.y < second.y + second.height &&
   first.y + first.height > second.y;
 
-export default function Graph() {
-  const [nodes, setNodes] = useState(initialNodes);
-  const [edges, setEdges] = useState([]);
+export default function Graph({
+  document = defaultDocument,
+  onDocumentChange = () => {},
+}) {
+  const normalizedDocument = normalizeGraphDocument(document);
+  const [nodes, setNodes] = useState(normalizedDocument.nodes);
+  const [edges, setEdges] = useState(normalizedDocument.edges);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [detailsNodeId, setDetailsNodeId] = useState(null);
   const [nodeMenuId, setNodeMenuId] = useState(null);
+  const [connectionMenuOpen, setConnectionMenuOpen] = useState(false);
   const [handleMenu, setHandleMenu] = useState(null);
   const [connection, setConnection] = useState(null);
-  const [viewport, setViewport] = useState({ x: 0, y: 0 });
+  const [viewport, setViewport] = useState(normalizedDocument.viewport);
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   const resizeRef = useRef(null);
   const panRef = useRef(null);
   const connectionRef = useRef(null);
+  const nodeMenuRef = useRef(null);
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
+
+  useEffect(() => {
+    onDocumentChange(
+      normalizeGraphDocument({
+        ...normalizedDocument,
+        nodes,
+        edges,
+        viewport,
+        version: normalizedDocument.version + 1,
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+  }, [nodes, edges, viewport]);
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const getNodeSize = (node) => ({
@@ -45,14 +82,14 @@ export default function Graph() {
   const pointFromEvent = (event) => {
     const bounds = svgRef.current.getBoundingClientRect();
     return {
-      x: event.clientX - bounds.left - viewport.x,
-      y: event.clientY - bounds.top - viewport.y,
+      x: (event.clientX - bounds.left - viewport.x) / viewport.scale,
+      y: (event.clientY - bounds.top - viewport.y) / viewport.scale,
     };
   };
 
   const screenPoint = (point) => ({
-    x: point.x + viewport.x,
-    y: point.y + viewport.y,
+    x: point.x * viewport.scale + viewport.x,
+    y: point.y * viewport.scale + viewport.y,
   });
 
   const beginCanvasPan = (event) => {
@@ -67,6 +104,7 @@ export default function Graph() {
     setSelectedNodeId(null);
     setDetailsNodeId(null);
     setNodeMenuId(null);
+    setConnectionMenuOpen(false);
     setHandleMenu(null);
   };
 
@@ -75,7 +113,44 @@ export default function Graph() {
     setViewport({
       x: panRef.current.viewport.x + event.clientX - panRef.current.clientX,
       y: panRef.current.viewport.y + event.clientY - panRef.current.clientY,
+      scale: panRef.current.viewport.scale,
     });
+  };
+
+  const moveCanvasWithScroll = (event) => {
+    event.preventDefault();
+
+    if (event.ctrlKey) {
+      const bounds = svgRef.current?.getBoundingClientRect();
+      if (!bounds) return;
+
+      setViewport((currentViewport) => {
+        const nextScale = Math.min(
+          MAX_ZOOM,
+          Math.max(
+            MIN_ZOOM,
+            currentViewport.scale * Math.exp(-event.deltaY * 0.01),
+          ),
+        );
+        const pointerX = event.clientX - bounds.left;
+        const pointerY = event.clientY - bounds.top;
+        const graphX = (pointerX - currentViewport.x) / currentViewport.scale;
+        const graphY = (pointerY - currentViewport.y) / currentViewport.scale;
+
+        return {
+          x: pointerX - graphX * nextScale,
+          y: pointerY - graphY * nextScale,
+          scale: nextScale,
+        };
+      });
+      return;
+    }
+
+    setViewport((currentViewport) => ({
+      x: currentViewport.x - event.deltaX,
+      y: currentViewport.y - event.deltaY,
+      scale: currentViewport.scale,
+    }));
   };
 
   const endCanvasPan = (event) => {
@@ -137,7 +212,7 @@ export default function Graph() {
   };
 
   const addNode = () => {
-    const id = `n${Date.now()}`;
+    const id = createId("node");
     setNodes((currentNodes) => [
       ...currentNodes,
       {
@@ -297,6 +372,7 @@ export default function Graph() {
 
   const beginNodeResize = (event, node) => {
     event.stopPropagation();
+    event.preventDefault();
     setSelectedNodeId(node.id);
     const point = pointFromEvent(event);
     resizeRef.current = {
@@ -332,6 +408,25 @@ export default function Graph() {
     setNodeMenuId(null);
   };
 
+  const deleteNode = (nodeId) => {
+    if (!window.confirm("Are you sure you want to delete this node?")) return;
+
+    setNodes((currentNodes) =>
+      currentNodes
+        .filter((node) => node.id !== nodeId)
+        .map((node) =>
+          node.parentId === nodeId ? { ...node, parentId: null } : node,
+        ),
+    );
+    setEdges((currentEdges) =>
+      currentEdges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId),
+    );
+    setSelectedNodeId(null);
+    setDetailsNodeId(null);
+    setNodeMenuId(null);
+    setConnectionMenuOpen(false);
+  };
+
   const attachToParentIfNeeded = (nodeId, parentId) => {
     if (!parentId) return;
     setNodes((currentNodes) =>
@@ -358,11 +453,10 @@ export default function Graph() {
     targetSide = "left",
     bidirectional = false,
   ) => {
-    const timestamp = Date.now();
     setEdges((currentEdges) => [
       ...currentEdges,
       {
-        id: `${sourceId}-${targetId}-${timestamp}`,
+        id: createId("edge"),
         from: sourceId,
         to: targetId,
         side: sourceSide,
@@ -371,7 +465,7 @@ export default function Graph() {
       ...(bidirectional
         ? [
             {
-              id: `${targetId}-${sourceId}-${timestamp}-reverse`,
+              id: createId("edge"),
               from: targetId,
               to: sourceId,
               side: targetSide,
@@ -473,12 +567,48 @@ export default function Graph() {
     [],
   );
 
+  useEffect(() => {
+    const closeNodeMenuOnOutsidePointer = (event) => {
+      if (!nodeMenuRef.current?.contains(event.target)) {
+        setNodeMenuId(null);
+        setConnectionMenuOpen(false);
+      }
+    };
+
+    globalThis.document.addEventListener(
+      "pointerdown",
+      closeNodeMenuOnOutsidePointer,
+      true,
+    );
+    return () =>
+      globalThis.document.removeEventListener(
+        "pointerdown",
+        closeNodeMenuOnOutsidePointer,
+        true,
+      );
+  }, []);
+
   const connectedEdges = (nodeId, side) =>
     edges.filter(
       (edge) =>
         (edge.from === nodeId && edge.side === side) ||
         (edge.to === nodeId && edge.targetSide === side),
     );
+
+  const connectedEdgesForNode = (nodeId) => {
+    const uniqueConnections = new Map();
+
+    edges
+      .filter((edge) => edge.from === nodeId || edge.to === nodeId)
+      .forEach((edge) => {
+        const nodePair = [edge.from, edge.to].sort().join("|");
+        if (!uniqueConnections.has(nodePair)) {
+          uniqueConnections.set(nodePair, edge);
+        }
+      });
+
+    return Array.from(uniqueConnections.values());
+  };
 
   const removeConnection = (edgeId) => {
     const edge = edges.find((candidate) => candidate.id === edgeId);
@@ -517,13 +647,36 @@ export default function Graph() {
     const centerY = targetNode.y + targetSize.height / 2;
 
     setViewport({
-      x: bounds.width / 2 - centerX,
-      y: bounds.height / 2 - centerY,
+      x: bounds.width / 2 - centerX * viewport.scale,
+      y: bounds.height / 2 - centerY * viewport.scale,
+      scale: viewport.scale,
+    });
+  };
+
+  const changeZoom = (direction) => {
+    const bounds = svgRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+
+    setViewport((currentViewport) => {
+      const nextScale = Math.min(
+        MAX_ZOOM,
+        Math.max(MIN_ZOOM, currentViewport.scale + direction * ZOOM_STEP),
+      );
+      const centerX =
+        (bounds.width / 2 - currentViewport.x) / currentViewport.scale;
+      const centerY =
+        (bounds.height / 2 - currentViewport.y) / currentViewport.scale;
+
+      return {
+        x: bounds.width / 2 - centerX * nextScale,
+        y: bounds.height / 2 - centerY * nextScale,
+        scale: nextScale,
+      };
     });
   };
 
   return (
-    <section className="flex h-[calc(100vh-8rem)] flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="graph-editor flex h-[calc(100vh-8rem)] flex-col rounded-xl p-4 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -531,7 +684,7 @@ export default function Graph() {
           aria-label="Add node"
           title="Add node"
           data-tooltip="Add node"
-          className="graph-toolbar-button rounded-lg bg-blue-600 text-white shadow-sm hover:bg-blue-700"
+          className="graph-toolbar-button graph-toolbar-primary rounded-lg text-white shadow-sm"
         >
           <svg
             aria-hidden="true"
@@ -550,7 +703,7 @@ export default function Graph() {
           aria-label="Focus previous node"
           title="Previous node"
           data-tooltip="Previous node"
-          className="graph-toolbar-button rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+          className="graph-toolbar-button graph-toolbar-secondary rounded-lg shadow-sm"
         >
           <svg
             aria-hidden="true"
@@ -573,7 +726,7 @@ export default function Graph() {
           aria-label="Focus next node"
           title="Next node"
           data-tooltip="Next node"
-          className="graph-toolbar-button rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+          className="graph-toolbar-button graph-toolbar-secondary rounded-lg shadow-sm"
         >
           <svg
             aria-hidden="true"
@@ -590,8 +743,49 @@ export default function Graph() {
             />
           </svg>
         </button>
+        <button
+          type="button"
+          onClick={() => changeZoom(1)}
+          aria-label="Zoom in"
+          title="Zoom in"
+          data-tooltip="Zoom in"
+          className="graph-toolbar-button graph-toolbar-secondary rounded-lg shadow-sm"
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="h-5 w-5"
+          >
+            <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => changeZoom(-1)}
+          aria-label="Zoom out"
+          title="Zoom out"
+          data-tooltip="Zoom out"
+          className="graph-toolbar-button graph-toolbar-secondary rounded-lg shadow-sm"
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="h-5 w-5"
+          >
+            <path d="M5 12h14" strokeLinecap="round" />
+          </svg>
+        </button>
       </div>
-      <div className="relative flex-1 min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+      <div
+        className="graph-canvas relative flex-1 min-h-0 overflow-hidden rounded-lg"
+        onWheel={moveCanvasWithScroll}
+      >
         <svg
           ref={svgRef}
           className="h-full w-full touch-none cursor-grab active:cursor-grabbing"
@@ -643,7 +837,9 @@ export default function Graph() {
                 </pattern>
               ))}
           </defs>
-          <g transform={`translate(${viewport.x} ${viewport.y})`}>
+          <g
+            transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}
+          >
             <rect
               x={-GRID_EXTENT + (viewport.x % GRID_SIZE)}
               y={-GRID_EXTENT + (viewport.y % GRID_SIZE)}
@@ -754,6 +950,7 @@ export default function Graph() {
                               event.stopPropagation();
                               setSelectedNodeId(node.id);
                               setNodeMenuId(node.id);
+                              setConnectionMenuOpen(false);
                               setDetailsNodeId(null);
                               setHandleMenu(null);
                             }}
@@ -781,7 +978,7 @@ export default function Graph() {
                       fill="#f8fafc"
                       stroke="#94a3b8"
                       strokeWidth="1.5"
-                      className="cursor-se-resize"
+                      className="cursor-se-resize select-none"
                       style={{ pointerEvents: "auto" }}
                       onPointerDown={(event) => {
                         event.stopPropagation();
@@ -850,17 +1047,35 @@ export default function Graph() {
 
         {nodeMenuId && selectedNode && (
           <div
-            className="fixed z-[1000] w-48 rounded-lg border border-slate-300 bg-white p-2 opacity-100 shadow-xl"
-            style={nodeMenuPosition(selectedNode)}
+            ref={nodeMenuRef}
+            className="fixed z-[2147483647] w-64 rounded-lg border border-slate-300 bg-white p-4 opacity-100 shadow-2xl"
+            style={{
+              ...nodeMenuPosition(selectedNode),
+              zIndex: 2147483647,
+              backgroundColor: "#ffffff",
+              opacity: 1,
+            }}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            <div className="border-b border-slate-100 px-2 pb-2 text-sm font-semibold text-slate-800">
-              Node actions
+            <div className="flex items-center justify-between border-b border-slate-100 px-3 pb-3 text-base font-semibold text-slate-800">
+              <span>Node actions</span>
+              <button
+                type="button"
+                aria-label="Close node actions"
+                title="Close node actions"
+                onClick={() => {
+                  setNodeMenuId(null);
+                  setConnectionMenuOpen(false);
+                }}
+                className="flex h-6 w-6 items-center justify-center rounded text-base font-normal leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                x
+              </button>
             </div>
             {selectedNode.parentId && (
               <button
                 onClick={() => detachNodeFromParent(selectedNode.id)}
-                className="block w-full border-t border-slate-100 px-2 pt-2 text-left text-sm text-slate-700 hover:text-blue-600"
+                className="block w-full border-t border-slate-100 px-3 py-3 text-left text-base text-slate-700 hover:text-blue-600"
               >
                 Detach from parent
               </button>
@@ -874,7 +1089,7 @@ export default function Graph() {
                 });
                 setNodeMenuId(null);
               }}
-              className="block w-full border-t border-slate-100 px-2 pt-2 text-left text-sm text-slate-700 hover:text-blue-600"
+              className="block w-full border-t border-slate-100 px-3 py-3 text-left text-base text-slate-700 hover:text-blue-600"
             >
               {selectedNode.isParent ? "Remove parent" : "Make parent node"}
             </button>
@@ -883,7 +1098,7 @@ export default function Graph() {
                 setDetailsNodeId(selectedNode.id);
                 setNodeMenuId(null);
               }}
-              className="block w-full border-t border-slate-100 px-2 pt-2 text-left text-sm text-slate-700 hover:text-blue-600"
+              className="block w-full border-t border-slate-100 px-3 py-3 text-left text-base text-slate-700 hover:text-blue-600"
             >
               Details
             </button>
@@ -901,19 +1116,50 @@ export default function Graph() {
                 }
                 setNodeMenuId(null);
               }}
-              className="block w-full border-t border-slate-100 px-2 pt-2 text-left text-sm text-slate-700 hover:text-blue-600"
+              className="block w-full border-t border-slate-100 px-3 py-3 text-left text-base text-slate-700 hover:text-blue-600"
             >
               Rename node
             </button>
-            {connectedEdges(selectedNode.id, "right").map((edge) => (
-              <button
-                key={edge.id}
-                onClick={() => removeConnection(edge.id)}
-                className="mt-2 block w-full border-t border-slate-100 px-2 pt-2 text-left text-sm text-rose-600 hover:text-rose-700"
-              >
-                Remove connection
-              </button>
-            ))}
+            <button
+              onClick={() => deleteNode(selectedNode.id)}
+              className="block w-full border-t border-slate-100 px-3 py-3 text-left text-base text-rose-600 hover:text-rose-700"
+            >
+              Delete node
+            </button>
+            {connectedEdgesForNode(selectedNode.id).length > 0 && (
+              <div className="border-t border-slate-100 pt-3">
+                <button
+                  onClick={() => setConnectionMenuOpen((current) => !current)}
+                  className="block w-full px-3 py-3 text-left text-base text-rose-600 hover:text-rose-700"
+                  aria-expanded={connectionMenuOpen}
+                >
+                  Remove connection
+                </button>
+                {connectionMenuOpen && (
+                  <div className="mt-1 space-y-1 rounded-md bg-slate-50 p-2">
+                    {connectedEdgesForNode(selectedNode.id).map((edge) => {
+                      const connectedNodeId =
+                        edge.from === selectedNode.id ? edge.to : edge.from;
+                      const connectedNode = nodes.find(
+                        (node) => node.id === connectedNodeId,
+                      );
+                      return (
+                        <button
+                          key={edge.id}
+                          onClick={() => {
+                            removeConnection(edge.id);
+                            setConnectionMenuOpen(false);
+                          }}
+                          className="block w-full rounded px-3 py-2 text-left text-sm text-slate-700 hover:bg-white hover:text-rose-600"
+                        >
+                          Remove connection to {connectedNode?.label || "node"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -938,18 +1184,6 @@ export default function Graph() {
             >
               Add two-way connection
             </button>
-            {connectedEdges(handleMenu.nodeId, handleMenu.side).map((edge) => (
-              <button
-                key={edge.id}
-                onClick={() => {
-                  removeConnection(edge.id);
-                  setHandleMenu(null);
-                }}
-                className="mt-1 block w-full border-t border-blue-100 px-2 pt-2 text-left text-sm text-rose-600 hover:text-rose-700"
-              >
-                Remove connection
-              </button>
-            ))}
           </div>
         )}
 
